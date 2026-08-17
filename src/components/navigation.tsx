@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Home, LayoutDashboard, Settings, Plus } from "lucide-react"
+import { useState } from "react"
 
 import { NewSessionDialog } from "@/components/new-session-dialog"
 import {
@@ -16,6 +17,7 @@ import {
 
 export function Navigation() {
   const pathname = usePathname()
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   const routes = [
     {
@@ -60,11 +62,19 @@ export function Navigation() {
             </SidebarMenuItem>
           ))}
           <SidebarMenuItem>
-            <NewSessionDialog />
+            <SidebarMenuButton
+              tooltip="New Interview"
+              onClick={() => setDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              <span>New Interview</span>
+            </SidebarMenuButton>
+            <NewSessionDialog open={dialogOpen} onOpenChange={setDialogOpen} />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarContent>
     </Sidebar>
   )
 }
+
 
