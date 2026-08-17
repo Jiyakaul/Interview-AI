@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   try {
     const { text } = await request.json();
 
-    if (!process.env.ELEVENLABS_API_KEY) {
+    if (!process.env.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY.includes('your_') || process.env.ELEVENLABS_API_KEY.includes('_here')) {
       return NextResponse.json(
         { error: "ElevenLabs API key not configured" },
         { status: 400 }

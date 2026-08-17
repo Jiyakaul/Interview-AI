@@ -341,6 +341,46 @@ export default function InterviewPage({
     }
   }, [])
 
+  const speakWithBrowserTTS = (text: string): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      if (!window.speechSynthesis) {
+        console.warn("Browser does not support SpeechSynthesis")
+        resolve()
+        return
+      }
+
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel()
+
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.rate = 1.0
+      utterance.pitch = 1.0
+      utterance.volume = 1.0
+
+      // Try to pick a good English voice
+      const voices = window.speechSynthesis.getVoices()
+      const preferredVoice = voices.find(
+        (voice) => voice.lang.includes("en") && voice.name.includes("Female"),
+      ) || voices.find((voice) => voice.lang.includes("en")) || voices[0]
+      
+      if (preferredVoice) {
+        utterance.voice = preferredVoice
+      }
+
+      utterance.onend = () => {
+        setIsSpeaking(false)
+        resolve()
+      }
+      utterance.onerror = (e) => {
+        console.error("Browser TTS error:", e)
+        setIsSpeaking(false)
+        resolve()
+      }
+
+      window.speechSynthesis.speak(utterance)
+    })
+  }
+
   const speak = async (text: string): Promise<void> => {
     try {
       if (!text) return
@@ -348,58 +388,66 @@ export default function InterviewPage({
       setIsSpeaking(true)
       setAudioError(false)
 
-      const response = await fetch("/api/elevenlabs", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to generate speech")
-      }
-
-      const audioBlob = await response.blob()
-      const audioUrl = URL.createObjectURL(audioBlob)
-
-      if (audioRef.current) {
-        // Stop any currently playing audio
-        audioRef.current.pause()
-        audioRef.current.currentTime = 0
-
-        // Set up new audio
-        audioRef.current.src = audioUrl
-        
-        // Create a promise that resolves when the audio finishes playing
-        const playPromise = new Promise<void>((resolve) => {
-          audioRef.current!.onended = () => {
-            setIsSpeaking(false)
-            URL.revokeObjectURL(audioUrl)
-            resolve()
-          }
+      // Try ElevenLabs first
+      let useElevenLabs = true
+      try {
+        const response = await fetch("/api/elevenlabs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text }),
         })
 
-        // Play the audio
-        try {
-          await audioRef.current.play()
-          // Wait for the audio to finish playing
-          await playPromise
-        } catch (playError) {
-          console.error("Error playing audio:", playError)
-          setAudioError(true)
-          setIsSpeaking(false)
-          toast.error("Playback Error", {
-            description: "Failed to play audio. Please check your audio settings.",
-          })
+        if (!response.ok) {
+          console.warn("ElevenLabs API failed, falling back to browser TTS")
+          useElevenLabs = false
+        } else {
+          const audioBlob = await response.blob()
+          const audioUrl = URL.createObjectURL(audioBlob)
+
+          if (audioRef.current) {
+            // Stop any currently playing audio
+            audioRef.current.pause()
+            audioRef.current.currentTime = 0
+
+            // Set up new audio
+            audioRef.current.src = audioUrl
+            
+            // Create a promise that resolves when the audio finishes playing
+            const playPromise = new Promise<void>((resolve) => {
+              audioRef.current!.onended = () => {
+                setIsSpeaking(false)
+                URL.revokeObjectURL(audioUrl)
+                resolve()
+              }
+            })
+
+            // Play the audio
+            try {
+              await audioRef.current.play()
+              // Wait for the audio to finish playing
+              await playPromise
+              return // Successfully played with ElevenLabs
+            } catch (playError) {
+              console.error("Error playing ElevenLabs audio:", playError)
+              useElevenLabs = false
+            }
+          }
         }
+      } catch (elevenLabsError) {
+        console.warn("ElevenLabs unavailable, falling back to browser TTS:", elevenLabsError)
+        useElevenLabs = false
+      }
+
+      // Fallback to browser SpeechSynthesis
+      if (!useElevenLabs) {
+        await speakWithBrowserTTS(text)
       }
     } catch (error) {
       console.error("Error speaking:", error)
       setIsSpeaking(false)
-      toast.error("Error", {
-        description: "Failed to generate speech. Please try again.",
-      })
+      // Don't show error toast — just continue silently so the interview isn't blocked
     }
   }
 
